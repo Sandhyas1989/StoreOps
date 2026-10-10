@@ -7,3 +7,5 @@ obj/
 *.suo
 TestResults/
 publish/
+.harness/output/*
+!.harness/output/.gitkeep
