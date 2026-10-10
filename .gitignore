@@ -9,3 +9,5 @@ TestResults/
 publish/
 .harness/output/*
 !.harness/output/.gitkeep
+# Requirement documents
+Requirement_Doc/
