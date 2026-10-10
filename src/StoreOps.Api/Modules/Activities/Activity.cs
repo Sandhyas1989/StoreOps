@@ -13,6 +13,7 @@ public enum ActivityPriority
     Low,
     Medium,
     High,
+    Critical,
 }
 
 /// <summary>A unit of store work, such as a restock, price change, or compliance check.</summary>

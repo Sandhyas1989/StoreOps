@@ -92,6 +92,52 @@ public sealed class ActivitiesEndpointsTests : ApiTestBase
         Assert.Equal(ErrorCodes.ValidationFailed, error.Code);
         Assert.Equal([ModelStateErrorFactory.ValueInvalidMessage], error.Details!["priority"]);
         Assert.DoesNotContain(error.Details.Values.SelectMany(m => m), m => m.Contains("System."));
+        Assert.Empty(await Client.GetFromJsonAsync<List<ActivityResponse>>("/api/activities", TestJson.Options) ?? []);
+        Assert.Empty(Factory.Events.Of<ActivityCreated>());
+    }
+
+    [Fact]
+    public async Task Post_activity_with_critical_priority_stores_and_publishes_critical()
+    {
+        var response = await Client.PostAsJsonAsync("/api/activities", new
+        {
+            title = "Cold-chain check",
+            storeId = "STORE-001",
+            priority = "Critical",
+        });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = await response.ReadAsync<ActivityResponse>();
+        Assert.Equal(ActivityPriority.Critical, created.Priority);
+        Assert.Equal("Cold-chain check", created.Title);
+
+        var fetched = await Client.GetFromJsonAsync<ActivityResponse>($"/api/activities/{created.Id}", TestJson.Options);
+        Assert.Equal(ActivityPriority.Critical, fetched?.Priority);
+        Assert.Equal(created, fetched);
+
+        var published = Assert.Single(Factory.Events.Of<ActivityCreated>());
+        Assert.Equal(created.Id, published.ActivityId);
+        Assert.Equal(ActivityPriority.Critical, published.Priority);
+    }
+
+    [Fact]
+    public async Task Patch_activity_to_critical_priority_updates_priority_only()
+    {
+        var created = await Client.CreateActivityAsync("Stock count", priority: "Low");
+        Assert.Equal(ActivityPriority.Low, created.Priority);
+        Assert.Equal(ActivityStatus.Pending, created.Status);
+
+        var response = await Client.PatchAsJsonAsync($"/api/activities/{created.Id}", new { priority = "Critical" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var updated = await response.ReadAsync<ActivityResponse>();
+        Assert.Equal(ActivityPriority.Critical, updated.Priority);
+        Assert.Equal(created.Title, updated.Title);
+        Assert.Equal(created.Status, updated.Status);
+
+        var fetched = await Client.GetFromJsonAsync<ActivityResponse>($"/api/activities/{created.Id}", TestJson.Options);
+        Assert.Equal(ActivityPriority.Critical, fetched?.Priority);
+        Assert.Equal(updated, fetched);
     }
 
     [Theory]
