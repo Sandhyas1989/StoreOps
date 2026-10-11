@@ -5,4 +5,10 @@ public sealed class SlaOptions
 {
     /// <summary>How long after an activity's due time an open breach is escalated.</summary>
     public TimeSpan EscalationGracePeriod { get; set; } = TimeSpan.FromMinutes(30);
+
+    /// <summary>How often the background worker runs an SLA evaluation.</summary>
+    public TimeSpan EvaluationInterval { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>Whether the background worker is registered at all.</summary>
+    public bool WorkerEnabled { get; set; } = true;
 }
