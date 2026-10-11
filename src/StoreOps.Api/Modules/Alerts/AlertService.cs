@@ -6,6 +6,7 @@ public interface IAlertService
 {
     Task<IReadOnlyList<Alert>> ListAsync(AlertSeverity? severity, CancellationToken cancellationToken);
 
+    /// <summary>Raises an alert; a repeat for the same (Type, SourceId, RecipientStaffId) returns the stored alert.</summary>
     Task<Alert> RaiseAsync(RaiseAlertCommand command, CancellationToken cancellationToken);
 }
 
@@ -30,10 +31,11 @@ public sealed class AlertService(IAlertRepository repository, TimeProvider clock
             Message = command.Message,
             SourceModule = command.SourceModule,
             SourceId = command.SourceId,
+            RecipientStaffId = command.RecipientStaffId,
+            RecipientRole = command.RecipientRole,
             CreatedAt = clock.GetUtcNow(),
         };
 
-        await repository.AddAsync(alert, cancellationToken);
-        return alert;
+        return await repository.TryAddAsync(alert, cancellationToken);
     }
 }

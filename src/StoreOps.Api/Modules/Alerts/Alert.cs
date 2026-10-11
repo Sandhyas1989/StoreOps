@@ -1,3 +1,5 @@
+using StoreOps.Api.Modules.Staff;
+
 namespace StoreOps.Api.Modules.Alerts;
 
 public enum AlertSeverity
@@ -22,10 +24,18 @@ public sealed record Alert
 
     public Guid? SourceId { get; init; }
 
+    public Guid? RecipientStaffId { get; init; }
+
+    public StaffRole? RecipientRole { get; init; }
+
     public required DateTimeOffset CreatedAt { get; init; }
 }
 
 public static class AlertTypes
 {
     public const string HighPriorityActivity = "HIGH_PRIORITY_ACTIVITY";
+
+    public const string SlaBreach = "SLA_BREACH";
+
+    public const string SlaEscalation = "SLA_ESCALATION";
 }

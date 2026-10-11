@@ -1,3 +1,5 @@
+using StoreOps.Api.Modules.Staff;
+
 namespace StoreOps.Api.Modules.Alerts;
 
 public sealed record RaiseAlertCommand(
@@ -5,7 +7,9 @@ public sealed record RaiseAlertCommand(
     AlertSeverity Severity,
     string Message,
     string SourceModule,
-    Guid? SourceId);
+    Guid? SourceId,
+    Guid? RecipientStaffId = null,
+    StaffRole? RecipientRole = null);
 
 public sealed record AlertResponse(
     Guid Id,
@@ -14,6 +18,8 @@ public sealed record AlertResponse(
     string Message,
     string SourceModule,
     Guid? SourceId,
+    Guid? RecipientStaffId,
+    StaffRole? RecipientRole,
     DateTimeOffset CreatedAt)
 {
     public static AlertResponse From(Alert alert) => new(
@@ -23,5 +29,7 @@ public sealed record AlertResponse(
         alert.Message,
         alert.SourceModule,
         alert.SourceId,
+        alert.RecipientStaffId,
+        alert.RecipientRole,
         alert.CreatedAt);
 }

@@ -11,6 +11,7 @@ public static class AlertsModule
         services.AddSingleton<IAlertRepository, InMemoryAlertRepository>();
         services.AddScoped<IAlertService, AlertService>();
         services.AddScoped<IEventHandler<ActivityCreated>, HighPriorityActivityAlertHandler>();
+        services.AddScoped<IEventHandler<ActivitySlaBreached>, SlaBreachAlertHandler>();
         return services;
     }
 }
