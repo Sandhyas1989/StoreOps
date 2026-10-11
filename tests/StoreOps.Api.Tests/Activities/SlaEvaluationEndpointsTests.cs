@@ -175,6 +175,122 @@ public sealed class SlaEvaluationEndpointsTests : ApiTestBase
         Assert.Equal(new[] { low.Id, completed.Id, future.Id, undated.Id }.Order(), all.Select(a => a.Id).Order());
     }
 
+    [Fact]
+    public async Task Escalates_open_breach_when_grace_period_elapses()
+    {
+        var activity = await CreateAsync("High", At(9, 10));
+        Factory.Clock.SetUtcNow(At(9, 11));
+        var breach = await EvaluateAsync();
+        Assert.Equal([activity.Id], breach.NewlyBreached);
+
+        Factory.Clock.SetUtcNow(At(9, 40));
+        var result = await EvaluateAsync();
+
+        Assert.Equal([activity.Id], result.NewlyEscalated);
+        Assert.Empty(result.NewlyBreached);
+        var events = Factory.Events.Of<ActivitySlaBreached>();
+        Assert.Equal(2, events.Count);
+        var breachEvent = Assert.Single(events, e => e.Stage == SlaStage.Breach);
+        var escalation = Assert.Single(events, e => e.Stage == SlaStage.Escalation);
+        Assert.Equal(activity.Id, escalation.ActivityId);
+        Assert.Equal(result.EvaluatedAt, escalation.OccurredAt);
+        Assert.Equal(breachEvent with { Stage = SlaStage.Escalation, OccurredAt = result.EvaluatedAt }, escalation);
+    }
+
+    [Fact]
+    public async Task Does_not_escalate_before_grace_period_elapses()
+    {
+        var activity = await CreateAsync("High", At(9, 10));
+        Factory.Clock.SetUtcNow(At(9, 11));
+        Assert.Equal([activity.Id], (await EvaluateAsync()).NewlyBreached);
+
+        Factory.Clock.SetUtcNow(At(9, 39).AddSeconds(59.9));
+        var result = await EvaluateAsync();
+
+        Assert.Empty(result.NewlyEscalated);
+        Assert.Empty(result.NewlyBreached);
+        Assert.Equal(SlaStage.Breach, Assert.Single(Factory.Events.Of<ActivitySlaBreached>()).Stage);
+        Assert.DoesNotContain(Factory.Events.Of<ActivitySlaBreached>(), e => e.Stage == SlaStage.Escalation);
+    }
+
+    [Fact]
+    public async Task Does_not_escalate_activity_completed_after_breach()
+    {
+        var activity = await CreateAsync("High", At(9, 10));
+        Factory.Clock.SetUtcNow(At(9, 11));
+        Assert.Equal([activity.Id], (await EvaluateAsync()).NewlyBreached);
+        Factory.Clock.SetUtcNow(At(9, 12));
+        await PatchStatusAsync(activity.Id, ActivityStatus.Completed);
+
+        Factory.Clock.SetUtcNow(At(9, 45));
+        var result = await EvaluateAsync();
+
+        Assert.Empty(result.NewlyEscalated);
+        Assert.Empty(result.NewlyBreached);
+        Assert.Equal(SlaStage.Breach, Assert.Single(Factory.Events.Of<ActivitySlaBreached>()).Stage);
+        Assert.DoesNotContain(Factory.Events.Of<ActivitySlaBreached>(), e => e.Stage == SlaStage.Escalation);
+    }
+
+    [Fact]
+    public async Task Escalation_event_is_published_once()
+    {
+        var activity = await CreateAsync("High", At(9, 10));
+        Factory.Clock.SetUtcNow(At(9, 11));
+        Assert.Equal([activity.Id], (await EvaluateAsync()).NewlyBreached);
+        Factory.Clock.SetUtcNow(At(9, 40));
+        Assert.Equal([activity.Id], (await EvaluateAsync()).NewlyEscalated);
+
+        var results = new List<SlaEvaluationResponse>();
+        for (var i = 0; i < 3; i++)
+        {
+            Factory.Clock.Advance(TimeSpan.FromHours(1));
+            results.Add(await EvaluateAsync());
+        }
+
+        var concurrent = await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => EvaluateAsync()));
+        results.AddRange(concurrent);
+
+        Assert.Equal(13, results.Count);
+        Assert.All(results, r => Assert.Empty(r.NewlyEscalated));
+        var escalations = Factory.Events.Of<ActivitySlaBreached>().Where(e => e.Stage == SlaStage.Escalation).ToList();
+        Assert.Equal(activity.Id, Assert.Single(escalations).ActivityId);
+    }
+
+    [Fact]
+    public async Task Grace_period_is_read_from_configuration()
+    {
+        using var configured = Factory.WithWebHostBuilder(builder => builder.UseSetting("Sla:EscalationGracePeriod", "00:05:00"));
+        var client = configured.CreateClient();
+        var created = await client.PostAsJsonAsync("/api/activities", new { title = "Grace check", storeId = "STORE-001", priority = "High", dueAt = At(9, 10) });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var activity = await created.ReadAsync<ActivityResponse>();
+        Factory.Clock.SetUtcNow(At(9, 11));
+        Assert.Equal([activity.Id], (await EvaluateAsync(client)).NewlyBreached);
+
+        Factory.Clock.SetUtcNow(At(9, 14).AddSeconds(59.9));
+        var early = await EvaluateAsync(client);
+        Factory.Clock.SetUtcNow(At(9, 15));
+        var atGrace = await EvaluateAsync(client);
+
+        Assert.Empty(early.NewlyEscalated);
+        Assert.Equal([activity.Id], atGrace.NewlyEscalated);
+        Assert.Equal(activity.Id, Assert.Single(Factory.Events.Of<ActivitySlaBreached>(), e => e.Stage == SlaStage.Escalation).ActivityId);
+    }
+
+    [Fact]
+    public async Task First_evaluation_after_grace_publishes_breach_then_escalation()
+    {
+        var activity = await CreateAsync("High", At(8, 0));
+
+        var result = await EvaluateAsync();
+
+        Assert.Equal([activity.Id], result.NewlyBreached);
+        Assert.Equal([activity.Id], result.NewlyEscalated);
+        var events = Factory.Events.Of<ActivitySlaBreached>();
+        Assert.Equal([SlaStage.Breach, SlaStage.Escalation], events.Select(e => e.Stage));
+        Assert.All(events, e => Assert.Equal(activity.Id, e.ActivityId));
+    }
+
     private static DateTimeOffset At(int hour, int minute) =>
         new(2026, 10, 1, hour, minute, 0, TimeSpan.Zero);
 
@@ -200,9 +316,11 @@ public sealed class SlaEvaluationEndpointsTests : ApiTestBase
         Assert.Equal(status, (await response.ReadAsync<ActivityResponse>()).Status);
     }
 
-    private async Task<SlaEvaluationResponse> EvaluateAsync()
+    private Task<SlaEvaluationResponse> EvaluateAsync() => EvaluateAsync(Client);
+
+    private static async Task<SlaEvaluationResponse> EvaluateAsync(HttpClient client)
     {
-        var response = await Client.PostAsync(EvaluationsPath, content: null);
+        var response = await client.PostAsync(EvaluationsPath, content: null);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return await response.ReadAsync<SlaEvaluationResponse>();
     }
