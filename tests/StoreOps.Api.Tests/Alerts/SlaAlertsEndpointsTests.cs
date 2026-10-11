@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using StoreOps.Api.Modules.Activities;
 using StoreOps.Api.Modules.Alerts;
 using StoreOps.Api.Modules.Staff;
+using StoreOps.Api.Shared.Errors;
 using StoreOps.Api.Shared.Events;
 using StoreOps.Api.Tests.Infrastructure;
 
@@ -99,6 +100,44 @@ public sealed class SlaAlertsEndpointsTests : ApiTestBase
         Assert.Equal(3, Factory.Events.Of<ActivitySlaBreached>().Count);
     }
 
+    [Fact]
+    public async Task Alerts_filter_by_recipient_and_combine_with_severity()
+    {
+        var activity = await CreateAsync("Freezer temp log", "STORE-001");
+        await EvaluateAsync();
+        Factory.Clock.SetUtcNow(At(9, 15));
+        await EvaluateAsync();
+
+        var all = await GetAlertsAsync();
+        Assert.Equal(3, all.Count);
+        Assert.Single(all, a => a.Type == AlertTypes.HighPriorityActivity && a.RecipientStaffId is null);
+
+        var shiftLead = await GetAlertsAsync($"?recipientStaffId={StaffSeed.ShiftLeadId}");
+        var breach = Assert.Single(shiftLead);
+        Assert.Equal(AlertTypes.SlaBreach, breach.Type);
+        Assert.Equal(activity.Id, breach.SourceId);
+        Assert.Equal(StaffSeed.ShiftLeadId, breach.RecipientStaffId);
+
+        var managerWarnings = await GetAlertsAsync($"?recipientStaffId={StaffSeed.StoreManagerId}&severity=Warning");
+        Assert.Empty(managerWarnings);
+
+        var managerCritical = await GetAlertsAsync($"?recipientStaffId={StaffSeed.StoreManagerId}&severity=Critical");
+        var escalation = Assert.Single(managerCritical);
+        Assert.Equal(AlertTypes.SlaEscalation, escalation.Type);
+
+        Assert.Empty(await GetAlertsAsync($"?recipientStaffId={Guid.NewGuid()}"));
+    }
+
+    [Fact]
+    public async Task Malformed_recipient_filter_returns_validation_error()
+    {
+        var response = await Client.GetAsync("/api/alerts?recipientStaffId=not-a-guid");
+
+        var error = await response.ReadErrorAsync(HttpStatusCode.BadRequest);
+        Assert.Equal(ErrorCodes.ValidationFailed, error.Code);
+        Assert.Contains("recipientStaffId", error.Details!.Keys);
+    }
+
     private static DateTimeOffset At(int hour, int minute) =>
         new(2026, 10, 1, hour, minute, 0, TimeSpan.Zero);
 
@@ -118,6 +157,6 @@ public sealed class SlaAlertsEndpointsTests : ApiTestBase
         return await response.ReadAsync<SlaEvaluationResponse>();
     }
 
-    private async Task<List<AlertResponse>> GetAlertsAsync() =>
-        await (await Client.GetAsync("/api/alerts")).ReadAsync<List<AlertResponse>>();
+    private async Task<List<AlertResponse>> GetAlertsAsync(string query = "") =>
+        await (await Client.GetAsync("/api/alerts" + query)).ReadAsync<List<AlertResponse>>();
 }

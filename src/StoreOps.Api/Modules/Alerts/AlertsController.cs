@@ -9,9 +9,10 @@ public sealed class AlertsController(IAlertService alerts) : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<AlertResponse>>> List(
         [FromQuery] AlertSeverity? severity,
+        [FromQuery] Guid? recipientStaffId,
         CancellationToken cancellationToken)
     {
-        var result = await alerts.ListAsync(severity, cancellationToken);
+        var result = await alerts.ListAsync(severity, recipientStaffId, cancellationToken);
         return Ok(result.Select(AlertResponse.From).ToList());
     }
 }
