@@ -10,3 +10,13 @@ public sealed record ActivityCreated(
     DateTimeOffset OccurredAt) : IIntegrationEvent;
 
 public sealed record ActivityDeleted(Guid ActivityId, DateTimeOffset OccurredAt) : IIntegrationEvent;
+
+public sealed record ActivitySlaBreached(
+    Guid ActivityId,
+    string Title,
+    string StoreId,
+    ActivityPriority Priority,
+    DateTimeOffset DueAt,
+    Guid? AssignedStaffId,
+    SlaStage Stage,
+    DateTimeOffset OccurredAt) : IIntegrationEvent;

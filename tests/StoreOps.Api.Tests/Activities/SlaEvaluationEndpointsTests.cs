@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using StoreOps.Api.Modules.Activities;
+using StoreOps.Api.Modules.Staff;
 using StoreOps.Api.Tests.Infrastructure;
 
 namespace StoreOps.Api.Tests.Activities;
@@ -104,6 +105,74 @@ public sealed class SlaEvaluationEndpointsTests : ApiTestBase
         var results = await Task.WhenAll(responses.Select(r => r.ReadAsync<SlaEvaluationResponse>()));
         Assert.Equal([activity.Id], results.SelectMany(r => r.NewlyBreached));
         Assert.Single(results, r => r.NewlyBreached.Contains(activity.Id));
+    }
+
+    [Fact]
+    public async Task Breach_publishes_event_with_full_payload()
+    {
+        var response = await Client.PostAsJsonAsync("/api/activities", new
+        {
+            title = "Freezer temp log",
+            storeId = "STORE-001",
+            priority = "High",
+            dueAt = WithinGraceDueAt,
+            assignedStaffId = StaffSeed.AssociateId,
+        });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var activity = await response.ReadAsync<ActivityResponse>();
+
+        var result = await EvaluateAsync();
+
+        Assert.Equal([activity.Id], result.NewlyBreached);
+        var published = Assert.Single(Factory.Events.Of<ActivitySlaBreached>());
+        Assert.Equal(activity.Id, published.ActivityId);
+        Assert.Equal("Freezer temp log", published.Title);
+        Assert.Equal("STORE-001", published.StoreId);
+        Assert.Equal(ActivityPriority.High, published.Priority);
+        Assert.Equal(WithinGraceDueAt, published.DueAt);
+        Assert.Equal(StaffSeed.AssociateId, published.AssignedStaffId);
+        Assert.Equal(SlaStage.Breach, published.Stage);
+        Assert.Equal(result.EvaluatedAt, published.OccurredAt);
+    }
+
+    [Fact]
+    public async Task Breach_event_is_published_once_across_repeated_and_concurrent_evaluations()
+    {
+        var activity = await CreateAsync("High", WithinGraceDueAt);
+
+        for (var i = 0; i < 3; i++)
+        {
+            await EvaluateAsync();
+        }
+
+        await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => Client.PostAsync(EvaluationsPath, content: null)));
+
+        var published = Assert.Single(Factory.Events.Of<ActivitySlaBreached>());
+        Assert.Equal(activity.Id, published.ActivityId);
+        Assert.Equal(SlaStage.Breach, published.Stage);
+    }
+
+    [Fact]
+    public async Task Non_qualifying_activities_publish_no_breach_event()
+    {
+        var low = await CreateAsync("Low", WithinGraceDueAt);
+        var completed = await CreateAsync("High", WithinGraceDueAt);
+        var future = await CreateAsync("High", At(10, 0));
+        var undated = await CreateAsync("High", dueAt: null);
+        await PatchStatusAsync(completed.Id, ActivityStatus.Completed);
+
+        var all = await Client.GetFromJsonAsync<List<ActivityResponse>>("/api/activities", TestJson.Options);
+        Assert.NotNull(all);
+        Assert.Equal(4, all.Count);
+
+        var response = await Client.PostAsync(EvaluationsPath, content: null);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await response.ReadAsync<SlaEvaluationResponse>();
+        Assert.Empty(result.NewlyBreached);
+        Assert.Empty(Factory.Events.Of<ActivitySlaBreached>());
+        Assert.Equal(ActivityStatus.Completed, (await Client.GetFromJsonAsync<ActivityResponse>($"/api/activities/{completed.Id}", TestJson.Options))?.Status);
+        Assert.Equal(new[] { low.Id, completed.Id, future.Id, undated.Id }.Order(), all.Select(a => a.Id).Order());
     }
 
     private static DateTimeOffset At(int hour, int minute) =>

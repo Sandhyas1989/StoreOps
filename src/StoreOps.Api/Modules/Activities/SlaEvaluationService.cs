@@ -1,4 +1,5 @@
 using StoreOps.Api.Modules.Activities.Persistence;
+using StoreOps.Api.Shared.Events;
 
 namespace StoreOps.Api.Modules.Activities;
 
@@ -10,6 +11,7 @@ public interface ISlaEvaluationService
 public sealed class SlaEvaluationService(
     IActivityRepository activities,
     ISlaRecordRepository slaRecords,
+    IEventBus eventBus,
     TimeProvider clock) : ISlaEvaluationService
 {
     public async Task<SlaEvaluationResponse> EvaluateAsync(CancellationToken cancellationToken)
@@ -23,6 +25,17 @@ public sealed class SlaEvaluationService(
             if (await slaRecords.TryAdvanceStageAsync(activity.Id, SlaStage.Breach, now, cancellationToken))
             {
                 newlyBreached.Add(activity.Id);
+                await eventBus.PublishAsync(
+                    new ActivitySlaBreached(
+                        activity.Id,
+                        activity.Title,
+                        activity.StoreId,
+                        activity.Priority,
+                        activity.DueAt.GetValueOrDefault(),
+                        activity.AssignedStaffId,
+                        SlaStage.Breach,
+                        now),
+                    cancellationToken);
             }
         }
 

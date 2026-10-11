@@ -32,6 +32,7 @@ public sealed class StoreOpsApiFactory : WebApplicationFactory<Program>
             services.AddSingleton(Events);
             services.AddScoped<IEventHandler<ActivityCreated>, RecordingEventHandler<ActivityCreated>>();
             services.AddScoped<IEventHandler<ActivityDeleted>, RecordingEventHandler<ActivityDeleted>>();
+            services.AddScoped<IEventHandler<ActivitySlaBreached>, RecordingEventHandler<ActivitySlaBreached>>();
             services.AddScoped<IEventHandler<ProgrammeMemberAdded>, RecordingEventHandler<ProgrammeMemberAdded>>();
         });
     }
