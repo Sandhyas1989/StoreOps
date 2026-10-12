@@ -174,3 +174,31 @@ Required Thresholds:
 ## Expected Outcome
 
 The combination of hard gates and weighted scoring ensures that AI-generated changes cannot bypass critical architectural or quality requirements. A feature is accepted only when it satisfies both functional expectations and architectural governance standards.
+
+## Run Observation: Sprint 2 Environment Interruption
+During Sprint 2 execution, the Generator run became blocked because the required .NET SDK 8.0.425 was not available in the local environment.
+
+The run was paused while the environment issue was investigated and corrected. After installing the required SDK version, the Sprint 2 execution was rerun and completed successfully.
+
+The Sprint 2 evaluation used diff base commit d27f765 rather than the normal HEAD baseline because the interrupted run had already produced partial artefacts.
+
+No escalation.md file was generated during this interruption. The issue was handled as an environment setup problem rather than a feature-design or architecture issue.
+
+Final outcome: Sprint 2 completed successfully and received a PASS verdict after the environment was corrected.
+
+
+
+## Run observation: Sprint 2 interruption (2026-10-11)
+The first Sprint 2 generator run stopped on an API spend-limit error (HTTP 429) before writing a summary, leaving partial work. The developer committed that work as 1a178c9.
+
+A later generator attempt wrote STATUS: BLOCKED because SDK 8.0.425, pinned in global.json, was not installed (only 8.0.422 was available).
+
+CLAUDE.md §4 and §6 would normally escalate a BLOCKED summary. Instead, the orchestrator stopped, the developer installed the required SDK and approved a rerun. No escalation.md file was created.
+
+The rerun verified the committed code and completed successfully. Because commit 1a178c9 already contained the Sprint 2 code, git diff HEAD was empty, so the evaluator used diff base d27f765.
+
+Result: PASS (100/100, iteration 1).
+
+The BLOCKED summary was overwritten and not archived. Evidence is available in .harness/reviews/sprint-2-run-log.md and the Sprint 2 evaluator feedback header.
+
+A related issue occurred during the same period when .harness/output files were accidentally committed in 7a43bbe due to the ignore rule being disabled. This was corrected in commits 094d445 and a22918f.
