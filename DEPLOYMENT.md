@@ -10,7 +10,11 @@
 | Plan | Windows, Standard S1, one instance, India South Central |
 | Runtime | .NET 8 (shown in the portal as ".NET - v8.0") |
 | Subscription | Azure "Learner Account" |
-| Live URL | `https://storeops-api-fvdcg3ebbkbgc0er.indiasouthcentral-01.azurewebsites.net` |
+| Health check | <https://storeops-api-fvdcg3ebbkbgc0er.indiasouthcentral-01.azurewebsites.net/health> (returns `Healthy`) |
+| Activities | <https://storeops-api-fvdcg3ebbkbgc0er.indiasouthcentral-01.azurewebsites.net/api/activities> (JSON) |
+| Alerts | <https://storeops-api-fvdcg3ebbkbgc0er.indiasouthcentral-01.azurewebsites.net/api/alerts> (JSON; includes the `SLA_BREACH` and `SLA_ESCALATION` alerts from section 4) |
+
+**The base URL has no page of its own.** StoreOps is an API-only service with no route at `/`, so opening the base URL alone returns an empty `404 Not Found`. This is expected and not a failed deployment (checked on 2026-10-13: the base URL returns 404 while `/health`, `/api/activities` and `/api/alerts` return 200). Use the links in the table above. Swagger is disabled in Production, so `/swagger` also returns 404.
 
 **Why not Docker.** The build machine has no Docker runtime (`docker --version`: command not found; recorded in JOURNAL.md, Decision 001). The `Dockerfile` in the repository root is provided but was **not built or run**, so this submission makes no Docker claim.
 
@@ -56,7 +60,7 @@
 
 ![Figure 3: Browser showing the /health endpoint returning Healthy](Screenshots/Health_response.png)
 
-**Figure 4: Activities endpoint.** Browser at `…azurewebsites.net/api/activities` returns `[]` (an empty list, because the in-memory store starts empty).
+**Figure 4: Activities endpoint.** Browser at `…azurewebsites.net/api/activities` returned `[]` when it was captured (an empty list, because the in-memory store starts empty). It lists the activities from the section 4 demonstration now.
 
 ![Figure 4: Browser showing GET /api/activities returning an empty list](Screenshots/Api_activities_response.png)
 
