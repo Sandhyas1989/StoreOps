@@ -1,0 +1,128 @@
+diff --git a/tests/StoreOps.Api.Tests/Architecture/ModuleBoundaryTests.cs b/tests/StoreOps.Api.Tests/Architecture/ModuleBoundaryTests.cs
+index 008d33c..eb30880 100644
+--- a/tests/StoreOps.Api.Tests/Architecture/ModuleBoundaryTests.cs
++++ b/tests/StoreOps.Api.Tests/Architecture/ModuleBoundaryTests.cs
+@@ -7,15 +7,24 @@ public sealed class ModuleBoundaryTests
+ 
+     [Fact]
+     public void Module_dependency_graph_has_no_cycles() =>
+-        Assert.Null(ModuleRules.FindCycle(ApiTypes));
++        RuleAssert.NoCycle(
++            "ARCH-07 / MC-07",
++            "remove the last dependency in the cycle; publish an event (ARCH-04) instead of adding a module-to-module edge.",
++            ModuleRules.FindCycle(ApiTypes));
+ 
+     [Fact]
+     public void Every_module_follows_controller_service_repository() =>
+-        Assert.Empty(ModuleRules.LayeringViolations(ApiTypes));
++        RuleAssert.NoViolations(
++            "ARCH-01 / HG-06",
++            "controller -> own service -> own Persistence repository; move logic out of controllers.",
++            ModuleRules.LayeringViolations(ApiTypes));
+ 
+     [Fact]
+     public void No_module_references_another_modules_repository() =>
+-        Assert.Empty(ModuleRules.RepositoryViolations(ApiTypes));
++        RuleAssert.NoViolations(
++            "ARCH-02 / HG-03",
++            "depend on the target module's *Lookup contract (reads) or publish an event via IEventBus (side effects).",
++            ModuleRules.RepositoryViolations(ApiTypes));
+ 
+     [Fact]
+     public void No_source_file_imports_another_modules_persistence_namespace()
+@@ -23,23 +32,35 @@ public sealed class ModuleBoundaryTests
+         var files = ModuleRules.LoadApiSourceFiles();
+         Assert.Contains(files, f => f.Module == "Activities");
+ 
+-        Assert.Empty(ModuleRules.PersistenceImportViolations(files));
++        RuleAssert.NoViolations(
++            "ARCH-02 / HG-03",
++            "remove the using/qualified name for the other module's Persistence namespace; use its *Lookup or an event.",
++            ModuleRules.PersistenceImportViolations(files));
+     }
+ 
+     [Fact]
+     public void Cross_module_constructor_dependencies_are_read_only_lookups() =>
+-        Assert.Empty(ModuleRules.CrossModuleDependencyViolations(ApiTypes));
++        RuleAssert.NoViolations(
++            "ARCH-03 / HG-04",
++            "inject only the other module's *Lookup interface; cross-module writes go through IEventBus.",
++            ModuleRules.CrossModuleDependencyViolations(ApiTypes));
+ 
+     [Fact]
+     public void Controllers_depend_on_services_not_repositories() =>
+-        Assert.Empty(ModuleRules.ControllerViolations(ApiTypes));
++        RuleAssert.NoViolations(
++            "ARCH-01 / HG-06",
++            "inject the module's service interface into the controller, not a repository.",
++            ModuleRules.ControllerViolations(ApiTypes));
+ 
+     [Fact]
+     public void Reports_module_is_read_only_toward_other_modules()
+     {
+         Assert.Contains(ApiTypes, t => ModuleRules.ModuleOf(t) == "Reports");
+ 
+-        Assert.Empty(ModuleRules.ReadOnlyModuleViolations(ApiTypes, "Reports"));
++        RuleAssert.NoViolations(
++            "ARCH-06 / HG-07",
++            "Reports may only read through *Lookup contracts and must not publish events.",
++            ModuleRules.ReadOnlyModuleViolations(ApiTypes, "Reports"));
+     }
+ 
+     [Fact]
+@@ -47,10 +68,16 @@ public sealed class ModuleBoundaryTests
+     {
+         Assert.Contains(ApiTypes, ModuleRules.IsLookup);
+ 
+-        Assert.Empty(ModuleRules.LookupViolations(ApiTypes));
++        RuleAssert.NoViolations(
++            "ARCH-03 / HG-04",
++            "rename or remove the write operation; *Lookup members must start with Find, List or Get.",
++            ModuleRules.LookupViolations(ApiTypes));
+     }
+ 
+     [Fact]
+     public void Shared_infrastructure_does_not_depend_on_modules() =>
+-        Assert.Empty(ModuleRules.SharedViolations(ApiTypes));
++        RuleAssert.NoViolations(
++            "ARCH-07 / MC-07",
++            "Shared must not reference any module type; invert the dependency with an interface or an event.",
++            ModuleRules.SharedViolations(ApiTypes));
+ }
+diff --git a/tests/StoreOps.Api.Tests/Architecture/RuleAssert.cs b/tests/StoreOps.Api.Tests/Architecture/RuleAssert.cs
+new file mode 100644
+index 0000000..44361d2
+--- /dev/null
++++ b/tests/StoreOps.Api.Tests/Architecture/RuleAssert.cs
+@@ -0,0 +1,31 @@
++using Xunit.Sdk;
++
++namespace StoreOps.Api.Tests.Architecture;
++
++/// <summary>
++/// Fails an architecture test with a message the generator can act on without reading the test: the rule and
++/// gate IDs, every violation in full (xUnit truncates collection output), and how to fix it.
++/// </summary>
++internal static class RuleAssert
++{
++    public static void NoViolations(string rule, string fix, IReadOnlyCollection<string> violations)
++    {
++        if (violations.Count == 0)
++        {
++            return;
++        }
++
++        throw new XunitException(
++            $"[{rule}] {violations.Count} violation(s):{Environment.NewLine}"
++            + string.Join(Environment.NewLine, violations.Select(v => $"  - {v}"))
++            + $"{Environment.NewLine}Fix: {fix}");
++    }
++
++    public static void NoCycle(string rule, string fix, string? cycle)
++    {
++        if (cycle is not null)
++        {
++            throw new XunitException($"[{rule}] module cycle: {cycle}{Environment.NewLine}Fix: {fix}");
++        }
++    }
++}
