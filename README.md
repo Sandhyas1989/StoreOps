@@ -2,6 +2,8 @@
 
 A REST API for managing retail store operations. It is built with .NET 8, C# 12, and ASP.NET Core Web API, and stores all data in memory.
 
+**Repository:** <https://github.com/Sandhyas1989/StoreOps> (branch `test/evaluator-hard-gates`)
+
 ## Modules
 
 | Module     | Responsibility                           | Depends on (read-only lookups / events) |
